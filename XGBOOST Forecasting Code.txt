@@ -1,0 +1,80 @@
+# Libraries
+# Install the following libraries (you only need to run the install packages code ONCE) and then load them (you need to do this every time you start with a new workspace)
+# packages_to_install <- c("forecast", "ggplot2", "gridExtra", "readr", "kableExtra", "xgboost")
+# install.packages(packages_to_install)
+
+library(forecast)
+library(ggplot2)
+library(gridExtra)
+library(readr)
+library(kableExtra)
+library(xgboost)  # Load XGBoost library
+
+# Import the data set
+data_raw <- read.csv('C:/R/RUDatathon_F_2023_CSV.csv', stringsAsFactors = FALSE, header = TRUE)
+
+# Create a data frame with a date column
+data <- data.frame(
+  Date = seq(as.Date("1850-01-01"), length.out = nrow(data_raw), by = "months"),
+  Anomaly = data_raw$Anomaly
+)
+
+# Create "train" and "test" data sets
+train_end <- as.Date("2019-08-01")
+test_start <- as.Date("2019-09-01")
+
+data_train <- data[data$Date <= train_end, ]
+data_test <- data[data$Date >= test_start, ]
+
+# Train an XGBoost model
+xgb_model <- xgboost(data = as.matrix(data_train[, "Anomaly"]), label = data_train$Anomaly, nrounds = 100, max_depth = 5, eta = 0.1)
+
+# Make predictions on the test set
+forecast_final <- predict(xgb_model, as.matrix(data_test[, "Anomaly"]))
+
+# Calculate RMSE, MAE, and MAPE for both train and test sets
+rmse_train <- sqrt(mean((data_train$Anomaly - predict(xgb_model, as.matrix(data_train[, "Anomaly"])))^2))
+mae_train <- mean(abs(data_train$Anomaly - predict(xgb_model, as.matrix(data_train[, "Anomaly"]))))
+mape_train <- mean(100 * abs(data_train$Anomaly - predict(xgb_model, as.matrix(data_train[, "Anomaly"]))) / data_train$Anomaly)
+
+rmse_test <- sqrt(mean((data_test$Anomaly - forecast_final)^2))
+mae_test <- mean(abs(data_test$Anomaly - forecast_final))
+mape_test <- mean(100 * abs(data_test$Anomaly - forecast_final) / data_test$Anomaly)
+
+cv_rmse <- sqrt(mean((data_train$Anomaly - predict(xgb_model, as.matrix(data_train[, "Anomaly"]), ntreelimit = 100))^2))
+cv_mae <- mean(abs(data_train$Anomaly - predict(xgb_model, as.matrix(data_train[, "Anomaly"]), ntreelimit = 100)))
+cv_mape <- mean(100 * abs(data_train$Anomaly - predict(xgb_model, as.matrix(data_train[, "Anomaly"]), ntreelimit = 100)) / data_train$Anomaly)
+
+# Create a performance table
+perf_xgboost <- data.frame(
+  Metric = c('RMSE', 'MAE', 'MAPE'),
+  Cv = c(
+    formatC(cv_rmse, format = 'f', digits = 5),
+    formatC(cv_mae, format = 'f', digits = 5),
+    formatC(cv_mape, format = 'f', digits = 5)
+  ),
+  Train = c(
+    formatC(rmse_train, format = 'f', digits = 5),
+    formatC(mae_train, format = 'f', digits = 5),
+    formatC(mape_train, format = 'f', digits = 5)
+  ),
+  Test = c(
+    formatC(rmse_test, format = 'f', digits = 5),
+    formatC(mae_test, format = 'f', digits = 5),
+    formatC(mape_test, format = 'f', digits = 5)
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Code for turning the data frame above into a nice plot using kable
+kable(
+  perf_xgboost,
+  caption = 'Performance - Temperature Anomalies',
+  align = 'r',
+  col.names = c('Metric', 'cv', 'train', 'test')
+) %>%
+  kable_styling(full_width = FALSE, position = 'l') %>%
+  column_spec(2, width = '7em') %>%
+  column_spec(3, width = '7em') %>%
+  column_spec(4, width = '7em')
+
